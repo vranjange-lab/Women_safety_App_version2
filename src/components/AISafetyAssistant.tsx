@@ -289,7 +289,7 @@ export default function AISafetyAssistant({ userId, userProfile }: AISafetyAssis
         {messages.length === 0 ? (
           <div className="text-center py-12 flex flex-col items-center justify-center h-full">
             <Brain className="w-10 h-10 text-slate-700 mb-3 animate-pulse" />
-            <p className="text-xs text-slate-500 max-w-sm">No active consultation history threads. Select an prompt below to query SafeHer's safety advisor.</p>
+            <p className="text-xs text-slate-500 max-w-sm">No active consultation history threads. Select a prompt below to query GuardianX's safety advisor.</p>
           </div>
         ) : (
           messages.map((msg) => (

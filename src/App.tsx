@@ -144,7 +144,7 @@ export default function App() {
               <Shield className="w-5 h-5 shrink-0" />
             </div>
             <div>
-              <h2 className="font-black text-slate-200 tracking-tight leading-none text-base">SafeHer</h2>
+              <h2 className="font-black text-slate-200 tracking-tight leading-none text-base">GuardianX</h2>
               <span className="text-[9px] uppercase tracking-widest text-slate-500 font-black">Sentinel Network</span>
             </div>
           </div>

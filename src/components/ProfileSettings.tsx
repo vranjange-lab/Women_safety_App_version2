@@ -196,7 +196,7 @@ export default function ProfileSettings({ userProfile, onSaveProfile, onLogOut, 
 
             <div>
               <p className="text-[9px] text-slate-500 uppercase tracking-widest font-black">Authorized Email</p>
-              <p className="text-slate-200 mt-0.5 truncate font-semibold">{currentUser?.email || 'guest-user@safeher.io'}</p>
+              <p className="text-slate-200 mt-0.5 truncate font-semibold">{currentUser?.email || 'guest-user@guardianx.io'}</p>
             </div>
 
             <div>

@@ -63,7 +63,7 @@ export default function PlacesModule({ currentLat = 37.774929, currentLng = -122
       },
       {
         id: 'p2',
-        name: 'SafeHer Community Sanctuary & Sentry Hub',
+        name: 'GuardianX Community Sanctuary & Sentry Hub',
         type: 'safe_house',
         address: '582 Broadway Avenue, Late Night Open Portal',
         phone: '+1 (555) 014-4882',

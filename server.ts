@@ -39,7 +39,7 @@ async function startServer() {
 
     try {
       // Build systemic prompt instructions
-      const systemInstruction = `You are SafeHer AI Safety Coordinator, an empathetic, clear, and highly practical crisis response and situational safety assistant.
+      const systemInstruction = `You are GuardianX AI Safety Coordinator, an empathetic, clear, and highly practical crisis response and situational safety assistant.
 Your priority is keeping women safe in stressful, unfamiliar, or dangerous settings.
 
 CRITICAL INSTRUCTIONS:
@@ -99,10 +99,10 @@ CRITICAL INSTRUCTIONS:
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[SafeHer Server] Fullstack engine online at http://localhost:${PORT}`);
+    console.log(`[GuardianX Server] Fullstack engine online at http://localhost:${PORT}`);
   });
 }
 
 startServer().catch((err) => {
-  console.error('[SafeHer Server] Failed to initiate:', err);
+  console.error('[GuardianX Server] Failed to initiate:', err);
 });

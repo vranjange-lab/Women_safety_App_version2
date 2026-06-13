@@ -60,7 +60,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
     // Immediate bypass sign-in for preview testing
     const demoUser = {
       uid: 'jane_sandbox_911',
-      email: 'verified-guardian@safeher.io',
+      email: 'verified-guardian@guardianx.io',
       displayName: 'Jane Doe',
       emailVerified: true
     };
@@ -81,7 +81,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
           <div className="w-16 h-18 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-500 flex items-center justify-center mx-auto mb-4 animate-pulse">
             <Shield className="w-8 h-8" />
           </div>
-          <h1 className="text-3xl font-black text-slate-100 tracking-tighter">SafeHer</h1>
+          <h1 className="text-3xl font-black text-slate-100 tracking-tighter">GuardianX</h1>
           <p className="text-slate-400 text-xs mt-1.5 leading-relaxed">
             Women Safety & Emergency Network Support. SOS sirens, live location sharing, and AI-led backup.
           </p>
