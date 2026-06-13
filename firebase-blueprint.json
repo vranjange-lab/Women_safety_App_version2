@@ -1,0 +1,205 @@
+{
+  "entities": {
+    "userProfile": {
+      "title": "UserProfile",
+      "description": "User profile with personal particulars, basic emergency health information, and custom emergency SMS alert texts.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Human legible name of the user."
+        },
+        "phone": {
+          "type": "string",
+          "description": "The registered primary emergency mobile contact number."
+        },
+        "email": {
+          "type": "string",
+          "description": "Registration email address."
+        },
+        "bloodGroup": {
+          "type": "string",
+          "description": "Medical blood type/group identifier."
+        },
+        "medicalConditions": {
+          "type": "string",
+          "description": "Active or relevant health history items to be displayed to EMT responders."
+        },
+        "emergencyNotes": {
+          "type": "string",
+          "description": "Special medical instructions or situational context."
+        },
+        "triggerMessage": {
+          "type": "string",
+          "description": "Standard prefilled distress message to be sent to emergency contacts during SOS event."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["name", "phone", "email", "triggerMessage"]
+    },
+    "emergencyContact": {
+      "title": "EmergencyContact",
+      "description": "Trusted individual selected to serve as immediate emergency responders.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "phone": {
+          "type": "string"
+        },
+        "relationship": {
+          "type": "string"
+        },
+        "isQuickDial": {
+          "type": "boolean"
+        },
+        "order": {
+          "type": "integer"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["name", "phone", "relationship", "order"]
+    },
+    "alertHistory": {
+      "title": "AlertHistory",
+      "description": "Historically tracked alert logs triggered during active SOS occurrences.",
+      "type": "object",
+      "properties": {
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "locationAddress": {
+          "type": "string"
+        },
+        "lat": {
+          "type": "number"
+        },
+        "lng": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "resolved", "cancelled"]
+        },
+        "notes": {
+          "type": "string"
+        },
+        "audioRecordingUrl": {
+          "type": "string"
+        }
+      },
+      "required": ["timestamp", "locationAddress", "lat", "lng", "status"]
+    },
+    "chatMessage": {
+      "title": "ChatMessage",
+      "description": "AI-powered conversation history thread to manage context.",
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": ["user", "model"]
+        },
+        "text": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["role", "text", "timestamp"]
+    },
+    "journeyCheckIn": {
+      "title": "JourneyCheckIn",
+      "description": "Active journey safety timer records.",
+      "type": "object",
+      "properties": {
+        "durationMinutes": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "safe", "expired_triggered"]
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "checkedInAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["durationMinutes", "status", "startedAt", "expiresAt"]
+    },
+    "evidenceVaultItem": {
+      "title": "EvidenceVaultItem",
+      "description": "Uploaded or recorded audio, image, and note evidence securely stored.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["photo", "audio", "note"]
+        },
+        "contentUrl": {
+          "type": "string"
+        },
+        "noteText": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "fileSize": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": ["name", "type", "timestamp"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "userProfile",
+      "description": "Top-level collection for storing user profile and safety triggers."
+    },
+    "users/{userId}/contacts/{contactId}": {
+      "schema": "emergencyContact",
+      "description": "Sub-collection mapped for managing designated emergency contacts."
+    },
+    "users/{userId}/history/{alertId}": {
+      "schema": "alertHistory",
+      "description": "Sub-collection preserving the historic log of triggered alarms, incidents, and recordings."
+    },
+    "users/{userId}/chat/{messageId}": {
+      "schema": "chatMessage",
+      "description": "Sub-collection logging conversational safety aid details securely."
+    },
+    "users/{userId}/checkins/{checkinId}": {
+      "schema": "journeyCheckIn",
+      "description": "Sub-collection managing active and historical journey security timers."
+    },
+    "users/{userId}/evidence/{evidenceId}": {
+      "schema": "evidenceVaultItem",
+      "description": "Sub-collection securing uploaded safety files, voice recordings, and notes."
+    }
+  }
+}

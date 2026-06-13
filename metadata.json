@@ -1,0 +1,6 @@
+{
+  "name": "Women Safety App",
+  "description": "SafeHer - Women Safety & Emergency App. Stay protected with SOS alerts, sirens, fake call simulation, live location sharing, emergency contacts, safe zones directories and Gemini-powered smart safety coordinate advice.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
