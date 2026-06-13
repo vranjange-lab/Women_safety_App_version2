@@ -75,6 +75,15 @@ export default function SOSModule({ userId, userProfile, onAlertTriggered }: SOS
   const [journeyTotalMinutes, setJourneyTotalMinutes] = useState<number>(15);
   const [journeySecondsLeft, setJourneySecondsLeft] = useState<number>(0);
 
+  // New location, geocoding and safety checking popup states
+  const [currentCity, setCurrentCity] = useState<string>('');
+  const [currentState, setCurrentState] = useState<string>('');
+  const [locationPermissionStatus, setLocationPermissionStatus] = useState<'prompt' | 'granted' | 'denied'>('prompt');
+  
+  const [showJourneyPopup, setShowJourneyPopup] = useState(false);
+  const [journeyPopupCountdown, setJourneyPopupCountdown] = useState<number | null>(null);
+  const [isPlayingJourneyRingtone, setIsPlayingJourneyRingtone] = useState(false);
+
   // Siren Audio Synthesizer Nodes & Trackers
   const audioCtxRef = useRef<AudioContext | null>(null);
   const sirenIntervalRef = useRef<any>(null);
@@ -137,7 +146,10 @@ export default function SOSModule({ userId, userProfile, onAlertTriggered }: SOS
     if (!journeyActive || journeySecondsLeft <= 0) {
       if (journeyActive && journeySecondsLeft === 0) {
         setJourneyActive(false);
-        triggerSOS('Breach Alert: Safety Check-in Journey Expired!');
+        // Expiration sequence starts continuous ringtone and displays confirmation check-in popup
+        setShowJourneyPopup(true);
+        setJourneyPopupCountdown(15);
+        startFakeRingtoneSynth();
       }
       return;
     }
@@ -146,6 +158,22 @@ export default function SOSModule({ userId, userProfile, onAlertTriggered }: SOS
     }, 1000);
     return () => clearTimeout(timer);
   }, [journeyActive, journeySecondsLeft]);
+
+  // Journey popup backup emergency countdown timer (15 seconds limit)
+  useEffect(() => {
+    if (!showJourneyPopup || journeyPopupCountdown === null) return;
+    if (journeyPopupCountdown === 0) {
+      setShowJourneyPopup(false);
+      setJourneyPopupCountdown(null);
+      stopFakeRingtoneSynth();
+      triggerSOS('Breach Alert: Safety Check-in Journey Expired and user failed to respond within 15 seconds!');
+      return;
+    }
+    const timer = setTimeout(() => {
+      setJourneyPopupCountdown(journeyPopupCountdown - 1);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [showJourneyPopup, journeyPopupCountdown]);
 
   // Fake Call delay timer
   useEffect(() => {
@@ -177,22 +205,52 @@ export default function SOSModule({ userId, userProfile, onAlertTriggered }: SOS
   useEffect(() => {
     if (!navigator.geolocation) {
       setLocalAddress('GPS not supported on your browser.');
+      setLocationPermissionStatus('denied');
       return;
     }
+
+    const fetchGpsDetails = async (lat: number, lng: number) => {
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`, {
+          headers: { 'Accept-Language': 'en' }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const address = data.address || {};
+          const city = address.city || address.town || address.village || address.suburb || 'Unknown City';
+          const state = address.state || address.region || 'Unknown State';
+          setCurrentCity(city);
+          setCurrentState(state);
+          setLocalAddress(data.display_name || `${city}, ${state}`);
+        } else {
+          setCurrentCity('Unknown City');
+          setCurrentState('Unknown State');
+          setLocalAddress(`Coordinates (${lat.toFixed(5)}, ${lng.toFixed(5)})`);
+        }
+      } catch (err) {
+        setCurrentCity('Unknown City');
+        setCurrentState('Unknown State');
+        setLocalAddress(`Coordinates (${lat.toFixed(5)}, ${lng.toFixed(5)})`);
+      }
+    };
 
     const onGPSReady = (position: GeolocationPosition) => {
       const lat = position.coords.latitude;
       const lng = position.coords.longitude;
       setCoords({ lat, lng });
-      setLocalAddress(`Coordinates (${lat.toFixed(5)}, ${lng.toFixed(5)})`);
+      setLocationPermissionStatus('granted');
+      fetchGpsDetails(lat, lng);
     };
 
     const onGPSError = (error: GeolocationPositionError) => {
       console.warn("GPS tracking error in App:", error.message);
       setGpsError(error.message);
+      setLocationPermissionStatus('denied');
       // fallback safe base coordinates
       setCoords({ lat: 37.774929, lng: -122.419416 });
-      setLocalAddress('Capital Plaza Sentry, fallback Coordinates (37.7749, -122.4194)');
+      setLocalAddress('GPS permission is required to detect your real location.');
+      setCurrentCity('Permission Denied');
+      setCurrentState('Sentry Fallback');
     };
 
     navigator.geolocation.getCurrentPosition(onGPSReady, onGPSError, { enableHighAccuracy: true });
@@ -302,6 +360,16 @@ export default function SOSModule({ userId, userProfile, onAlertTriggered }: SOS
     };
   }, [voiceActivated]);
 
+  // Reset shake count to 0 if shaking stops for more than 2 seconds
+  useEffect(() => {
+    if (shakeCount === 0) return;
+    const timer = setTimeout(() => {
+      setShakeCount(0);
+      shakeTimestamps.current = [];
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [shakeCount]);
+
   // Shake detection listener setup (6 shakes in 5 seconds)
   useEffect(() => {
     if (!shakeActivated) {
@@ -310,9 +378,9 @@ export default function SOSModule({ userId, userProfile, onAlertTriggered }: SOS
     }
 
     const sensMap = {
-      low: 55,
-      medium: 40,
-      high: 25
+      low: 18.0,
+      medium: 13.0,
+      high: 8.0
     };
     const currentThreshold = sensMap[shakeSensitivity];
 
@@ -329,11 +397,27 @@ export default function SOSModule({ userId, userProfile, onAlertTriggered }: SOS
         const y = acc.y || 0;
         const z = acc.z || 0;
 
-        const speed = Math.abs(x + y + z - lastXRef.current - lastYRef.current - lastZRef.current) / diffTime * 10000;
+        const dx = x - lastXRef.current;
+        const dy = y - lastYRef.current;
+        const dz = z - lastZRef.current;
+
+        const speed = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
         if (speed > currentThreshold) {
           const now = Date.now();
-          // Filter out older shaking signals (older than 5 seconds)
+          
+          // Count only discrete shake occurrences separated by at least 200ms
+          const prevShake = lastShakeTimeRef.current;
+          if (prevShake > 0 && (now - prevShake < 200)) {
+            return;
+          }
+          
+          // Reset timestamps if more than 2 seconds idle
+          if (prevShake > 0 && (now - prevShake > 2000)) {
+            shakeTimestamps.current = [];
+          }
+
+          lastShakeTimeRef.current = now;
           shakeTimestamps.current = [...shakeTimestamps.current, now].filter(t => now - t <= 5000);
           setShakeCount(shakeTimestamps.current.length);
 
@@ -472,6 +556,25 @@ export default function SOSModule({ userId, userProfile, onAlertTriggered }: SOS
     }
   };
 
+  const handleJourneyCheckInSafe = async () => {
+    setShowJourneyPopup(false);
+    setJourneyPopupCountdown(null);
+    stopFakeRingtoneSynth();
+    try {
+      await stopJourneyMarkSafe();
+      console.log("[SafeHer Journey] Journey resolved successfully by user.");
+    } catch (err) {
+      console.error("Failed to mark journey safe:", err);
+    }
+  };
+
+  const handleJourneyNotSafe = () => {
+    setShowJourneyPopup(false);
+    setJourneyPopupCountdown(null);
+    stopFakeRingtoneSynth();
+    triggerSOS('Journey Emergency: User checked in as NOT safe!');
+  };
+
   // Automatic Audio Recorder launch
   const startAutomaticVoiceRecording = async () => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -552,52 +655,66 @@ export default function SOSModule({ userId, userProfile, onAlertTriggered }: SOS
     setIsAlerting(true);
     startSirenSynthesizer();
 
-    // STEP 1 & 2: Pull most accurate coordinates and maps link
-    let finalCoords = { ...coords };
-    let mapsLink = `https://www.google.com/maps?q=${finalCoords.lat},${finalCoords.lng}`;
+    const executeDispatch = async (posCoords: { lat: number; lng: number }) => {
+      // Step 2: Generate maps link
+      const mapsLink = `https://www.google.com/maps?q=${posCoords.lat},${posCoords.lng}`;
 
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition((pos) => {
-        finalCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        setCoords(finalCoords);
-        mapsLink = `https://www.google.com/maps?q=${finalCoords.lat},${finalCoords.lng}`;
-      });
-    }
+      // Step 3: Setup exact emergency alert text containing layout
+      const broadcastMessage = `EMERGENCY ALERT\n\nI may be in danger and need immediate assistance.\n\nMy current location:\n${mapsLink}\n\nPlease contact me immediately.`;
 
-    // STEP 3: Setup dispatch communications mock listing with Google Maps Link
-    const contactsList = await dbService.getEmergencyContacts(userId);
-    const sentHistoryLogs = contactsList.map(contact => ({
-      id: contact.id,
-      name: contact.name,
-      phone: contact.phone,
-      sentAt: new Date().toLocaleTimeString(),
-      status: 'SENT_SUCCESSFULLY'
-    }));
-    setSmsSendLogs(sentHistoryLogs);
+      const contactsList = await dbService.getEmergencyContacts(userId);
+      const sentHistoryLogs = contactsList.map(contact => ({
+        id: contact.id,
+        name: contact.name,
+        phone: contact.phone,
+        sentAt: new Date().toLocaleTimeString(),
+        status: 'SENT_SUCCESSFULLY'
+      }));
+      setSmsSendLogs(sentHistoryLogs);
 
-    // Formulate emergency broadcast template
-    const broadcastMessage = `EMERGENCY ALERT\n\nI may be in danger and need immediate assistance.\n\nMy current location:\n${mapsLink}\n\nPlease contact me immediately.`;
+      // Open WhatsApp emergency dispatch with pre-filled message
+      const whatsappUrl = `https://wa.me/9960755500?text=${encodeURIComponent(broadcastMessage)}`;
+      window.open(whatsappUrl, '_blank');
 
-    const newAlert: Omit<AlertHistory, 'id'> = {
-      timestamp: new Date().toISOString(),
-      locationAddress: localAddress,
-      lat: finalCoords.lat,
-      lng: finalCoords.lng,
-      status: 'active',
-      notes: customNote || broadcastMessage
+      // Step 4: Prepare the Firestore alert document
+      const newAlert: Omit<AlertHistory, 'id'> = {
+        timestamp: new Date().toISOString(),
+        locationAddress: localAddress,
+        lat: posCoords.lat,
+        lng: posCoords.lng,
+        status: 'active',
+        notes: customNote || broadcastMessage
+      };
+
+      try {
+        const saved = await dbService.addEmergencyAlert(userId, newAlert);
+        setActiveAlert(saved);
+        onAlertTriggered();
+        console.log(`[SafeHer Security] Alert saved to Firestore successfully.`, saved);
+      } catch (err) {
+        console.error("[SafeHer Security Error] Logging distress alert to Firestore aborted:", err);
+      }
     };
 
-    // STEP 4: Save SOS event to Firestore
-    try {
-      const saved = await dbService.addEmergencyAlert(userId, newAlert);
-      setActiveAlert(saved);
-      onAlertTriggered();
-      console.log(`[SafeHer Security] Alert saved to Firestore successfully.`, saved);
-    } catch (err) {
-      console.error("[SafeHer Security Error] Logging distress alert to Firestore aborted:", err);
+    // Step 1: Immediately get high accuracy current GPS location
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const fetchedCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setCoords(fetchedCoords);
+          executeDispatch(fetchedCoords);
+        },
+        (err) => {
+          console.warn("High accuracy GPS fetch failed, using known coordinates:", err);
+          executeDispatch(coords);
+        },
+        { enableHighAccuracy: true, timeout: 3000 }
+      );
+    } else {
+      executeDispatch(coords);
     }
 
-    // STEP 8: Automatically run audio microphone stream recording
+    // Automatically run audio microphone stream recording
     startAutomaticVoiceRecording();
   };
 
@@ -743,11 +860,11 @@ export default function SOSModule({ userId, userProfile, onAlertTriggered }: SOS
 
   // List of emergency services
   const emergencyServices = [
-    { name: 'Metro Police Department HQ', type: 'Police Station', phone: '+1 (555) 019-9111', directCall: '911', dist: '0.3 km' },
-    { name: 'St. Jude General Emergency Center', type: 'Trauma Care / Hospital', phone: '+1 (555) 018-0909', directCall: '911', dist: '1.2 km' },
-    { name: 'National Crisis Sentry Support line', type: 'Women Helpline', phone: '1-800-799-7233', directCall: '18007997233', dist: 'Verified 24/7' },
-    { name: 'Ambulance & Paramedic Dispatch', type: 'Ambulance Unit', phone: '911', directCall: '911', dist: 'Emergency Immediate' },
-    { name: 'SafeHer Voluntary Rescue House', type: 'Safe House', phone: '+1 (555) 014-4882', directCall: '+15550144882', dist: '0.6 km' }
+    { name: 'District Police Precinct Station', type: 'Police Station', phone: '100', directCall: '100', dist: '0.4 km' },
+    { name: 'City Hospital Emergency Ward', type: 'Hospital', phone: '102', directCall: '102', dist: '1.2 km' },
+    { name: 'Women Helpline Services Support', type: 'Women Helpline', phone: '181', directCall: '181', dist: 'Active Hotline' },
+    { name: 'Public Ambulance Dispatch Desk', type: 'Ambulance Number', phone: '102', directCall: '102', dist: 'Immediate Dispatch' },
+    { name: 'National Emergency Helpline Sentry', type: 'Emergency Helpline', phone: '112', directCall: '112', dist: 'Core Helpline' }
   ];
 
   return (
@@ -883,43 +1000,47 @@ export default function SOSModule({ userId, userProfile, onAlertTriggered }: SOS
               <div className="p-4 bg-slate-950 border border-slate-800 rounded-3xl space-y-3">
                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block pb-1 border-b border-slate-900">Sentinel Quick Actions</span>
                 
-                <div className="grid grid-cols-2 gap-2 text-[11px] font-extrabold uppercase">
+                <div className="grid grid-cols-2 gap-2 text-[10px] font-extrabold uppercase tracking-tight">
                   <a
-                    href="tel:911"
+                    href="tel:100"
                     onClick={(e) => {
                       e.stopPropagation();
-                      alert("Simulating standard Emergency Call system connection dispatcher... Dialing 911");
+                      alert("Simulating Police Department Dispatcher... Dialing 100");
                     }}
-                    className="p-3.5 rounded-2xl bg-slate-900 border border-red-500/30 text-rose-450 hover:bg-slate-850 flex items-center justify-center gap-2"
+                    className="p-3 bg-slate-900 border border-slate-800 text-rose-450 hover:bg-slate-850 flex items-center justify-center gap-2 rounded-2xl text-center"
                   >
                     🚨 Call Police
                   </a>
                   <a
-                    href="tel:911"
+                    href="tel:181"
                     onClick={(e) => {
                       e.stopPropagation();
-                      alert("Simulating standard Emergency Medical Ambulance connection dispatcher... Dialing 911");
+                      alert("Simulating Women Helpline Support Center... Dialing 181");
                     }}
-                    className="p-3.5 rounded-2xl bg-slate-900 border border-red-500/30 text-rose-450 hover:bg-slate-850 flex items-center justify-center gap-2"
+                    className="p-3 bg-slate-900 border border-slate-800 text-rose-450 hover:bg-slate-850 flex items-center justify-center gap-2 rounded-2xl text-center"
+                  >
+                    📞 Call Women Helpline
+                  </a>
+                  <a
+                    href="tel:102"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      alert("Simulating Public Ambulance Emergency Dispatcher... Dialing 102");
+                    }}
+                    className="p-3 bg-slate-900 border border-slate-800 text-rose-450 hover:bg-slate-850 flex items-center justify-center gap-2 rounded-2xl text-center"
                   >
                     🚑 Call Ambulance
                   </a>
                   <a
-                    href="tel:18007997233"
+                    href="tel:112"
                     onClick={(e) => {
                       e.stopPropagation();
-                      alert("Simulating standard Domestic/Women Helpline dispatcher... Dialing 1-800-799-7233");
+                      alert("Simulating Emergency Sentry Helpline Dispatcher... Dialing 112");
                     }}
-                    className="p-3.5 rounded-2xl bg-slate-900 border border-red-500/30 text-rose-450 hover:bg-slate-850 flex items-center justify-center gap-2"
+                    className="p-3 bg-slate-900 border border-slate-800 text-rose-450 hover:bg-slate-850 flex items-center justify-center gap-2 rounded-2xl text-center"
                   >
-                    📞 call helpline
+                    ⚡ Call Emergency Helper
                   </a>
-                  <button
-                    onClick={handleShareLiveLocation}
-                    className="p-3.5 rounded-2xl bg-emerald-500 text-slate-950 hover:bg-emerald-600 flex items-center justify-center gap-2 cursor-pointer text-center"
-                  >
-                    📍 share live loc
-                  </button>
                 </div>
               </div>
             </div>
@@ -988,12 +1109,42 @@ export default function SOSModule({ userId, userProfile, onAlertTriggered }: SOS
             )}
 
             {/* Location Info Banner */}
-            <div className="w-full flex items-start gap-2.5 p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800 text-left text-xs mb-3">
-              <MapPin className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0 animate-pulse" />
-              <div className="overflow-hidden">
-                <p className="font-bold text-slate-200">Guardians Location Dispatch Center</p>
-                <p className="text-slate-400 mt-0.5 text-[11px] truncate">{localAddress}</p>
+            <div className="w-full space-y-2 mb-3 select-none">
+              <div className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800 text-left text-xs">
+                <MapPin className={`w-4 h-4 mt-0.5 shrink-0 animate-pulse ${locationPermissionStatus === 'denied' ? 'text-rose-500' : 'text-emerald-400'}`} />
+                <div className="overflow-hidden w-full">
+                  <div className="flex items-center justify-between">
+                    <p className="font-bold text-slate-200">Current Location</p>
+                    <span className={`text-[9px] font-mono uppercase font-black tracking-wider px-1.5 py-0.5 rounded ${
+                      locationPermissionStatus === 'granted' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'
+                    }`}>
+                      {locationPermissionStatus === 'granted' ? '● Live Tracking' : '● GPS Offline'}
+                    </span>
+                  </div>
+                  
+                  {/* Dynamic City, State, Coordinates */}
+                  {locationPermissionStatus === 'granted' && currentCity && (
+                    <p className="text-slate-200 font-semibold mt-1 text-[11px] font-sans">
+                      {currentCity}{currentState ? `, ${currentState}` : ''}
+                    </p>
+                  )}
+                  
+                  <p className="text-slate-400 mt-0.5 text-[10px] break-all">
+                    {localAddress}
+                  </p>
+                  
+                  <p className="text-[10px] text-slate-500 mt-1 font-mono tracking-tight leading-none">
+                    LAT: {coords.lat.toFixed(6)} | LNG: {coords.lng.toFixed(6)}
+                  </p>
+                </div>
               </div>
+
+              {/* GPS Denied Warning Banner */}
+              {locationPermissionStatus === 'denied' && (
+                <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-xs text-rose-400 font-bold rounded-2xl text-center leading-tight flex items-center justify-center gap-1.5 animate-bounce">
+                  ⚠️ GPS Permission Denied. Please enable system location permissions for precise real-time emergency dispatched help!
+                </div>
+              )}
             </div>
           </div>
 
@@ -1057,8 +1208,8 @@ export default function SOSModule({ userId, userProfile, onAlertTriggered }: SOS
                 {shakeActivated && (
                   <div className="pt-2 border-t border-slate-950 text-[10px] space-y-2">
                     <div className="flex justify-between items-center text-slate-400">
-                      <span className="font-bold uppercase tracking-wider">Device Shake Counter:</span>
-                      <span className="font-mono bg-amber-500/10 text-amber-400 px-2 rounded-md font-black">{shakeCount}/6 Shakes</span>
+                      <span className="font-bold uppercase tracking-wider text-amber-400">Shake Counter:</span>
+                      <span className="font-mono bg-amber-500/10 text-amber-450 px-2.5 py-0.5 rounded-md font-black text-xs">{shakeCount}/6</span>
                     </div>
 
                     {/* Progress Bar of Shakes */}
@@ -1218,21 +1369,73 @@ export default function SOSModule({ userId, userProfile, onAlertTriggered }: SOS
       {shakeCountdown !== null && (
         <div className="fixed inset-0 bg-red-950 bg-opacity-95 z-50 flex flex-col justify-center items-center p-8 text-white select-none text-center">
           <div className="space-y-4 max-w-sm">
-            <div className="w-16 h-18 rounded-full bg-red-500/10 text-red-400 flex items-center justify-center mx-auto mb-4 animate-ping">
+            <div className="w-16 h-18 rounded-full bg-red-500/10 text-red-450 flex items-center justify-center mx-auto mb-4 animate-bounce">
               <Smartphone className="w-8 h-8" />
             </div>
-            <h3 className="text-2xl font-black text-slate-100 uppercase tracking-tight">Rapid Device Shaking</h3>
-            <p className="text-sm text-rose-455 font-bold uppercase tracking-wider leading-none">Emergency SOS trigger timer initiates in</p>
-            <p className="text-7xl font-black font-mono animate-bounce text-slate-50">{shakeCountdown}</p>
-            <p className="text-xs text-slate-400 font-semibold italic">
-              Please click the cancel key if this was an accidental trigger event.
+            <h3 className="text-2xl font-black text-rose-450 uppercase tracking-tight">
+              Emergency detected.<br/>Activate SOS?
+            </h3>
+            <p className="text-sm text-slate-300 font-medium leading-relaxed">
+              SOS will activate automatically in
             </p>
-            <button
-              onClick={handleCancelShakeCountdown}
-              className="mt-6 w-full py-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 font-extrabold uppercase transition-all tracking-wide text-xs cursor-pointer text-slate-300"
-            >
-              Stand Down - Cancel Trigger
-            </button>
+            <p className="text-7xl font-black font-mono animate-pulse text-rose-50">{shakeCountdown}</p>
+            
+            <div className="flex flex-col gap-3 pt-4">
+              <button
+                onClick={() => {
+                  setShakeCountdown(null);
+                  triggerSOS('SOS activated manually via Device Shake detection.');
+                }}
+                className="w-full py-4 rounded-xl bg-rose-600 hover:bg-rose-700 font-extrabold uppercase transition-all tracking-wide text-xs cursor-pointer text-white shadow-lg"
+              >
+                Activate SOS
+              </button>
+              <button
+                onClick={handleCancelShakeCountdown}
+                className="w-full py-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 font-semibold uppercase transition-all tracking-wide text-xs cursor-pointer text-slate-300"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Giant Safety Journey Check-In Overlay */}
+      {showJourneyPopup && (
+        <div className="fixed inset-0 bg-slate-900 bg-opacity-95 z-50 flex flex-col justify-center items-center p-8 text-white select-none text-center">
+          <div className="space-y-5 max-w-sm bg-slate-950 p-6 rounded-3xl border border-rose-500/30 shadow-2xl">
+            <div className="w-16 h-18 rounded-full bg-rose-500/10 text-rose-455 flex items-center justify-center mx-auto mb-2 animate-bounce">
+              <ShieldAlert className="w-8 h-8 text-rose-500" />
+            </div>
+            
+            <h3 className="text-xl font-black text-rose-400 uppercase tracking-tight">
+              Have you safely reached your destination?
+            </h3>
+            
+            <p className="text-xs text-slate-300 leading-relaxed font-sans">
+              Your safety journey countdown timer has reached zero. Please verify your safety status immediately.
+            </p>
+            
+            <div className="p-3 bg-rose-550/10 border border-rose-500/20 rounded-xl space-y-1">
+              <p className="text-[10px] uppercase font-bold text-rose-400 tracking-widest leading-none">Emergency SOS triggers automatically in</p>
+              <p className="text-4xl font-mono font-black text-rose-50 animate-pulse">{journeyPopupCountdown}s</p>
+            </div>
+
+            <div className="flex flex-col gap-3.5 pt-2">
+              <button
+                onClick={handleJourneyCheckInSafe}
+                className="w-full py-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 font-extrabold uppercase transition-all tracking-wide text-xs cursor-pointer text-white shadow-md text-center"
+              >
+                Check-In: I Safely Arrived
+              </button>
+              <button
+                onClick={handleJourneyNotSafe}
+                className="w-full py-4 rounded-xl bg-rose-700/80 hover:bg-rose-750 font-bold uppercase transition-all tracking-wide text-[11px] cursor-pointer text-rose-100 border border-rose-800 text-center"
+              >
+                Not Yet
+              </button>
+            </div>
           </div>
         </div>
       )}

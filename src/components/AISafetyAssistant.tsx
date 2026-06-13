@@ -106,17 +106,53 @@ export default function AISafetyAssistant({ userId, userProfile }: AISafetyAssis
     setIsLoading(true);
 
     try {
+      // Get actual current geolocation using browser API
+      let actualLocation = {
+        address: 'Downtown Hub Transit Area (Fallback)',
+        lat: 37.7749,
+        lng: -122.4194
+      };
+
+      if (navigator.geolocation) {
+        try {
+          const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              enableHighAccuracy: true,
+              timeout: 4000
+            });
+          });
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          actualLocation = {
+            address: `Coordinates (${lat.toFixed(5)}, ${lng.toFixed(5)})`,
+            lat,
+            lng
+          };
+
+          // Try reverse geocoding via OpenStreetMap Nominatim
+          try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`, {
+              headers: { 'Accept-Language': 'en' }
+            });
+            if (res.ok) {
+              const data = await res.json();
+              actualLocation.address = data.display_name || actualLocation.address;
+            }
+          } catch (geoErr) {
+            console.warn('Reverse geocoding error:', geoErr);
+          }
+        } catch (posErr) {
+          console.warn('Could not retrieve browser geolocation:', posErr);
+        }
+      }
+
       const response = await fetch('/api/gemini/assist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [...messages, savedUserMsg],
           userProfile,
-          currentLocation: {
-            address: 'Downtown Hub Transit Area',
-            lat: 37.7749,
-            lng: -122.4194
-          }
+          currentLocation: actualLocation
         })
       });
 

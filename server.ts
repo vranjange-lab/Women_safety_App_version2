@@ -1,6 +1,5 @@
 import express from 'express';
 import path from 'path';
-import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 
@@ -53,8 +52,12 @@ CRITICAL INSTRUCTIONS:
 7. Be ultra-supportive, reassuring, calm, and direct. Use short, crisp sentences. Do not use corporate gibberish.`;
 
       // Format messages in the expected @google/genai SDK chats model
+      // In Gemini, history must start with role: 'user'. Any leading 'model' messages should be skipped.
+      const firstUserIndex = messages.findIndex((m: any) => m.role === 'user');
+      const conversationalMessages = firstUserIndex !== -1 ? messages.slice(firstUserIndex) : messages;
+
       // Format as { role: 'user' | 'model', parts: [{ text: '...' }] }
-      const formattedContents = messages.map((m: any) => ({
+      const formattedContents = conversationalMessages.map((m: any) => ({
         role: m.role === 'model' ? 'model' : 'user',
         parts: [{ text: m.text }]
       }));
@@ -81,7 +84,8 @@ CRITICAL INSTRUCTIONS:
 
   // Vite middleware for dev / static files for prod
   if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
+    const { createServer } = await import('vite');
+    const vite = await createServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
