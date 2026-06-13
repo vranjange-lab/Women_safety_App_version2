@@ -83,26 +83,47 @@ export default function AISafetyAssistant({ userId, userProfile }: AISafetyAssis
     }
   };
 
-  const handleSendMessage = async (customText?: string) => {
+  const handleSendMessage = async (customText?: string, isRetry: boolean = false) => {
     const textToSend = customText || inputText;
     if (!textToSend.trim() || isLoading) return;
 
     setErrorError(null);
     if (!customText) setInputText('');
 
-    // Append user message locally & save to DB
-    const userMsg: Omit<ChatMessage, 'id'> = {
-      role: 'user',
-      text: textToSend,
-      timestamp: new Date().toISOString()
-    };
-    
-    const savedUserMsg = await dbService.addChatMessage(userId, userMsg);
-    setMessages(prev => {
-      const updated = [...prev, savedUserMsg];
-      updateRiskAndContext(updated);
-      return updated;
-    });
+    let savedUserMsg: ChatMessage;
+
+    if (isRetry) {
+      // Find the last user message that is already in messages and in database
+      const found = [...messages].reverse().find(m => m.role === 'user');
+      if (found) {
+        savedUserMsg = found;
+      } else {
+        const userMsg: Omit<ChatMessage, 'id'> = {
+          role: 'user',
+          text: textToSend,
+          timestamp: new Date().toISOString()
+        };
+        savedUserMsg = await dbService.addChatMessage(userId, userMsg);
+        setMessages(prev => {
+          const updated = [...prev, savedUserMsg];
+          updateRiskAndContext(updated);
+          return updated;
+        });
+      }
+    } else {
+      const userMsg: Omit<ChatMessage, 'id'> = {
+        role: 'user',
+        text: textToSend,
+        timestamp: new Date().toISOString()
+      };
+      savedUserMsg = await dbService.addChatMessage(userId, userMsg);
+      setMessages(prev => {
+        const updated = [...prev, savedUserMsg];
+        updateRiskAndContext(updated);
+        return updated;
+      });
+    }
+
     setIsLoading(true);
 
     try {
@@ -150,7 +171,7 @@ export default function AISafetyAssistant({ userId, userProfile }: AISafetyAssis
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [...messages, savedUserMsg],
+          messages: isRetry ? messages : [...messages, savedUserMsg],
           userProfile,
           currentLocation: actualLocation
         })
@@ -181,6 +202,13 @@ export default function AISafetyAssistant({ userId, userProfile }: AISafetyAssis
       setErrorError(err.message || 'Unable to connect with AI Safety Assistant.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleRetry = () => {
+    const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+    if (lastUserMsg) {
+      handleSendMessage(lastUserMsg.text, true);
     }
   };
 
@@ -287,17 +315,33 @@ export default function AISafetyAssistant({ userId, userProfile }: AISafetyAssis
           ))
         )}
         {isLoading && (
-          <div className="flex items-start gap-2 max-w-[85%]">
-            <div className="bg-slate-950 border border-slate-800 rounded-2xl rounded-tl-none p-3.5 flex items-center gap-2 text-xs text-slate-400">
-              <Loader className="w-4 h-4 text-violet-400 animate-spin" />
-              Scanning Threat Coordinates & formulating guide steps...
+          <div className="flex items-start gap-2 max-w-[85%] animate-pulse">
+            <div className="bg-slate-950 border border-slate-800 rounded-2xl rounded-tl-none p-3.5 flex flex-col gap-2 shadow-sm">
+              <div className="flex items-center gap-2 text-xs text-slate-400 font-medium">
+                <Loader className="w-3.5 h-3.5 text-violet-400 animate-spin" />
+                <span>Scanning coordinates & formulating safety steps...</span>
+              </div>
+              <div className="flex items-center gap-1.5 px-0.5 pt-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-bounce [animation-delay:-0.3s]"></span>
+                <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-bounce [animation-delay:-0.15s]"></span>
+                <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-bounce"></span>
+              </div>
             </div>
           </div>
         )}
         {errorMsg && (
-          <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-400 flex items-start gap-2 max-w-sm ml-auto mr-auto">
-            <AlertCircle className="w-4 h-4 shrink-0 text-red-500 mt-0.5" />
-            <p>{errorMsg}</p>
+          <div className="p-4 rounded-2xl bg-red-950 border border-red-900/40 text-xs text-red-400 space-y-3 max-w-sm ml-auto mr-auto text-center shadow-lg relative z-10">
+            <div className="flex items-start gap-2 text-left justify-center">
+              <AlertCircle className="w-4 h-4 shrink-0 text-red-500 mt-0.5 animate-pulse" />
+              <p className="font-sans font-medium text-red-300 leading-tight">{errorMsg}</p>
+            </div>
+            <button
+              type="button"
+              onClick={handleRetry}
+              className="py-1.5 px-3 bg-red-650 hover:bg-red-750 border border-red-500/30 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-md"
+            >
+              <Zap className="w-3 h-3 text-red-105" /> Retry Consultation
+            </button>
           </div>
         )}
         <div ref={chatEndRef} />

@@ -148,7 +148,7 @@ export default function SOSModule({ userId, userProfile, onAlertTriggered }: SOS
         setJourneyActive(false);
         // Expiration sequence starts continuous ringtone and displays confirmation check-in popup
         setShowJourneyPopup(true);
-        setJourneyPopupCountdown(15);
+        setJourneyPopupCountdown(6);
         startFakeRingtoneSynth();
       }
       return;
@@ -166,7 +166,7 @@ export default function SOSModule({ userId, userProfile, onAlertTriggered }: SOS
       setShowJourneyPopup(false);
       setJourneyPopupCountdown(null);
       stopFakeRingtoneSynth();
-      triggerSOS('Breach Alert: Safety Check-in Journey Expired and user failed to respond within 15 seconds!');
+      triggerSOS('Breach Alert: Safety Check-in Journey Expired and user failed to respond within 6 seconds!');
       return;
     }
     const timer = setTimeout(() => {
@@ -286,7 +286,7 @@ export default function SOSModule({ userId, userProfile, onAlertTriggered }: SOS
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         stream.getTracks().forEach(t => t.stop()); // close tracks
         setMicPermissionState('granted');
-        setSpeechStatus('Listening');
+        setSpeechStatus('Permission Granted');
 
         rec = new SpeechRecognition();
         rec.continuous = true;
@@ -378,9 +378,9 @@ export default function SOSModule({ userId, userProfile, onAlertTriggered }: SOS
     }
 
     const sensMap = {
-      low: 18.0,
-      medium: 13.0,
-      high: 8.0
+      low: 28.0,
+      medium: 22.0,
+      high: 16.0
     };
     const currentThreshold = sensMap[shakeSensitivity];
 
@@ -1031,16 +1031,16 @@ export default function SOSModule({ userId, userProfile, onAlertTriggered }: SOS
                   >
                     🚑 Call Ambulance
                   </a>
-                  <a
-                    href="tel:112"
+                  <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      alert("Simulating Emergency Sentry Helpline Dispatcher... Dialing 112");
+                      handleShareLiveLocation();
                     }}
-                    className="p-3 bg-slate-900 border border-slate-800 text-rose-450 hover:bg-slate-850 flex items-center justify-center gap-2 rounded-2xl text-center"
+                    className="p-3 bg-slate-900 border border-slate-800 text-emerald-400 hover:bg-slate-850 flex items-center justify-center gap-2 rounded-2xl text-center font-extrabold uppercase tracking-tight cursor-pointer"
                   >
-                    ⚡ Call Emergency Helper
-                  </a>
+                    📍 Share Location
+                  </button>
                 </div>
               </div>
             </div>
