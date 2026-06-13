@@ -129,9 +129,9 @@ export default function AISafetyAssistant({ userId, userProfile }: AISafetyAssis
     try {
       // Get actual current geolocation using browser API
       let actualLocation = {
-        address: 'Downtown Hub Transit Area (Fallback)',
-        lat: 37.7749,
-        lng: -122.4194
+        address: 'Unknown Location (No GPS Access)',
+        lat: 0,
+        lng: 0
       };
 
       if (navigator.geolocation) {

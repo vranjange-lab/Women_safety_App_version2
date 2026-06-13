@@ -49,8 +49,8 @@ export default function SOSModule({ userId, userProfile, onAlertTriggered }: SOS
   const [fakeCallDuration, setFakeCallDuration] = useState(0);
 
   // Sensor Actions
-  const [localAddress, setLocalAddress] = useState('Tracking live location...');
-  const [coords, setCoords] = useState({ lat: 37.7749, lng: -122.4194 }); // default SF
+  const [localAddress, setLocalAddress] = useState('Waiting for secure GPS coordinates signal...');
+  const [coords, setCoords] = useState({ lat: 0, lng: 0 });
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [activeAlert, setActiveAlert] = useState<AlertHistory | null>(null);
 
@@ -78,6 +78,7 @@ export default function SOSModule({ userId, userProfile, onAlertTriggered }: SOS
   // New location, geocoding and safety checking popup states
   const [currentCity, setCurrentCity] = useState<string>('');
   const [currentState, setCurrentState] = useState<string>('');
+  const [currentCountry, setCurrentCountry] = useState<string>('');
   const [locationPermissionStatus, setLocationPermissionStatus] = useState<'prompt' | 'granted' | 'denied'>('prompt');
   
   const [showJourneyPopup, setShowJourneyPopup] = useState(false);
@@ -217,19 +218,23 @@ export default function SOSModule({ userId, userProfile, onAlertTriggered }: SOS
         if (res.ok) {
           const data = await res.json();
           const address = data.address || {};
-          const city = address.city || address.town || address.village || address.suburb || 'Unknown City';
+          const city = address.city || address.town || address.village || address.suburb || address.municipality || 'Unknown City';
           const state = address.state || address.region || 'Unknown State';
+          const country = address.country || 'Unknown Country';
           setCurrentCity(city);
           setCurrentState(state);
-          setLocalAddress(data.display_name || `${city}, ${state}`);
+          setCurrentCountry(country);
+          setLocalAddress(`${city}, ${state}, ${country}`);
         } else {
           setCurrentCity('Unknown City');
           setCurrentState('Unknown State');
+          setCurrentCountry('Unknown Country');
           setLocalAddress(`Coordinates (${lat.toFixed(5)}, ${lng.toFixed(5)})`);
         }
       } catch (err) {
         setCurrentCity('Unknown City');
         setCurrentState('Unknown State');
+        setCurrentCountry('Unknown Country');
         setLocalAddress(`Coordinates (${lat.toFixed(5)}, ${lng.toFixed(5)})`);
       }
     };
@@ -246,15 +251,15 @@ export default function SOSModule({ userId, userProfile, onAlertTriggered }: SOS
       console.warn("GPS tracking error in App:", error.message);
       setGpsError(error.message);
       setLocationPermissionStatus('denied');
-      // fallback safe base coordinates
-      setCoords({ lat: 37.774929, lng: -122.419416 });
+      setCoords({ lat: 0, lng: 0 });
       setLocalAddress('GPS permission is required to detect your real location.');
       setCurrentCity('Permission Denied');
-      setCurrentState('Sentry Fallback');
+      setCurrentState('Access Denied');
+      setCurrentCountry('Access Denied');
     };
 
     navigator.geolocation.getCurrentPosition(onGPSReady, onGPSError, { enableHighAccuracy: true });
-    const watchId = navigator.geolocation.watchPosition(onGPSReady, onGPSError);
+    const watchId = navigator.geolocation.watchPosition(onGPSReady, onGPSError, { enableHighAccuracy: true });
 
     return () => navigator.geolocation.clearWatch(watchId);
   }, []);
@@ -1122,20 +1127,32 @@ export default function SOSModule({ userId, userProfile, onAlertTriggered }: SOS
                     </span>
                   </div>
                   
-                  {/* Dynamic City, State, Coordinates */}
-                  {locationPermissionStatus === 'granted' && currentCity && (
-                    <p className="text-slate-200 font-semibold mt-1 text-[11px] font-sans">
-                      {currentCity}{currentState ? `, ${currentState}` : ''}
-                    </p>
+                  {/* Dynamic City, State, Country, Coordinates */}
+                  {locationPermissionStatus === 'granted' ? (
+                    <div className="mt-2 space-y-1 font-sans text-xs">
+                      <p className="text-slate-250 font-bold text-[12px] leading-tight">
+                        {currentCity || 'Unknown City'}{currentState ? `, ${currentState}` : ''}{currentCountry ? `, ${currentCountry}` : ''}
+                      </p>
+                      <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-slate-900/85 mt-1.5 text-[10px] text-slate-400 font-mono">
+                        <div>
+                          <span className="text-slate-500 block uppercase text-[8px] font-black tracking-wider">Latitude</span>
+                          <span className="text-emerald-400 font-bold">{coords.lat !== 0 ? coords.lat.toFixed(6) : 'Acquiring...'}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block uppercase text-[8px] font-black tracking-wider">Longitude</span>
+                          <span className="text-emerald-400 font-bold">{coords.lng !== 0 ? coords.lng.toFixed(6) : 'Acquiring...'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : locationPermissionStatus === 'prompt' ? (
+                    <div className="mt-2 text-[11px] text-slate-400 animate-pulse">
+                      ⏳ Reaching GPS satellite & acquiring your current coordinates...
+                    </div>
+                  ) : (
+                    <div className="mt-2 text-[11px] text-rose-450 font-semibold italic">
+                      ⚠️ location permission is required to detect your real location.
+                    </div>
                   )}
-                  
-                  <p className="text-slate-400 mt-0.5 text-[10px] break-all">
-                    {localAddress}
-                  </p>
-                  
-                  <p className="text-[10px] text-slate-500 mt-1 font-mono tracking-tight leading-none">
-                    LAT: {coords.lat.toFixed(6)} | LNG: {coords.lng.toFixed(6)}
-                  </p>
                 </div>
               </div>
 
